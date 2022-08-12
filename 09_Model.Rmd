@@ -1,0 +1,1116 @@
+---
+title: "modelBA"
+author: "Lena Bueschel"
+date: "26 7 2022"
+output: html_document
+---
+
+```{r}
+library(lme4)
+library(dplyr)
+library(sjPlot)
+library(Metrics)
+```
+
+```{r}
+#get data
+data <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/final_selection_Neq_complete.csv")
+data_stand <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/final_selection_Neq_complete_zstand.csv")
+
+#convert into reasonable units 
+##1mm Precipitation -> 100mm Precipitation 
+data$chirps_sum <- data$chirps_sum/100
+
+##1°C KDD -> 10°C KDD 
+data$kdd_result <- data$kdd_result*10
+
+##1kg N/ha -> 100g N/ha
+data$N_kg_ph <- data$N_kg_ph*10
+
+##1m3 Soilmoist -> 1l Soilmoist
+data$esa_avg <- data$esa_avg*1000
+
+
+#divide into cluster 
+cluster1 <- data[which((data$country%in%c("Rwanda", "Malawi", "Burundi"))&(data$plant_date>150)),]
+
+cluster2 <- data[which((data$country== "Tanzania")|(data$country=="Kenya")|((data$country=="Rwanda")&(data$plant_date<150))),]
+
+cluster1_stand <- data_stand[which((data_stand$country%in%c("Rwanda", "Malawi", "Burundi"))&(data_stand$plant_date>150)),]
+
+cluster2_stand <- data_stand[which((data_stand$country== "Tanzania")|(data_stand$country=="Kenya")|
+                                     ((data_stand$country=="Rwanda")&(data_stand$plant_date<150))),]
+
+```
+
+#1. MODEL: Cluster 1 - MGMT - survey as random effect 
+```{r}
+#setup model
+model_mgmt_1 <- lmer(yield_kg_ph ~ N_kg_ph + intercrop + hybrid + (1|survey), data = cluster1, REML = TRUE, verbose = FALSE)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_mgmt_1,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_survey_mgmt.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_mgmt_1,
+                         show.p = FALSE,
+                         show.re.var = TRUE, 
+                         pred.labels = c("(Intercept)", "Amount of nitrogen fertilizer", "Use of intercropping", "Use of hybrid seeds"),
+                         dv.labels = "Effects of management variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+MGMT_survey_cluster1 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(MGMT_survey_cluster1) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster1), 0.7*nrow(cluster1), replace = FALSE)
+  dat_train <- cluster1[dat_index,]
+  dat_valid <- cluster1[-dat_index,]
+  
+  model_mgmt_1 <- lmer(yield_kg_ph ~ N_kg_ph + intercrop + hybrid + (1|survey), data = dat_train, REML = TRUE, verbose = FALSE)
+  
+  pred <- predict(model_mgmt_1, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+MGMT_survey_cluster1$RMSE <- vec_rmse
+MGMT_survey_cluster1$R2 <- vec_rsq
+MGMT_survey_cluster1$cluster <- "Cluster 1"
+MGMT_survey_cluster1$r.e. <- "survey"
+MGMT_survey_cluster1$model <- 'MGMT'
+
+```
+
+#get estimates for Model 1 with standardized data 
+```{r}
+#setup model
+model_mgmt_1_stand <- lmer(yield_kg_ph ~ N_kg_ph + intercrop + hybrid + (1|survey), data = cluster1_stand, REML = TRUE, verbose = FALSE)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_mgmt_1_stand,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_survey_mgmt_stand.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+
+```
+
+#2. MODEL : Cluster 1 - MGMT - no random effect
+```{r}
+model_mgmt_2 <- lm(yield_kg_ph ~ N_kg_ph + intercrop + hybrid, data = cluster1)
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_mgmt_2,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_lm_mgmt.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_mgmt_2,
+                         show.p = FALSE,
+                         pred.labels = c("(Intercept)", "Amount of nitrogen fertilizer", "Use of intercropping", "Use of hybrid seeds"),
+                         show.re.var = TRUE, 
+                         dv.labels = "Effects of management variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+MGMT_lm_cluster1 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(MGMT_lm_cluster1) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster1), 0.7*nrow(cluster1), replace = FALSE)
+  dat_train <- cluster1[dat_index,]
+  dat_valid <- cluster1[-dat_index,]
+  
+  model_mgmt_2 <- lm(yield_kg_ph ~ N_kg_ph + intercrop + hybrid, data = dat_train)
+  
+  pred <- predict(model_mgmt_2, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+MGMT_lm_cluster1$RMSE <- vec_rmse
+MGMT_lm_cluster1$R2 <- vec_rsq
+MGMT_lm_cluster1$cluster <- "Cluster 1"
+MGMT_lm_cluster1$r.e. <- "no random effect"
+MGMT_lm_cluster1$model <- 'MGMT'
+
+```
+
+#get estimates for Model 2 with standardized data 
+```{r}
+#setup model
+model_mgmt_2_stand <- lm(yield_kg_ph ~ N_kg_ph + intercrop + hybrid, data = cluster1_stand)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_mgmt_2_stand,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_lm_mgmt_stand.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+```
+
+#3. MODEL: Cluster 1 - ENVIRONMENT - survey as random effect 
+```{r}
+model_env_3 <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + (1|survey), data = cluster1, REML = TRUE, verbose = FALSE)
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_env_3,
+                           axis.labels = c("KDD", "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6, colors = c("navy", "orange"),
+                           title = "Effects of environmental variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_survey_env.png", height = 600, width = 900)
+print(plot)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_env_3,
+                         show.p = FALSE,
+                         pred.labels = c("(Intercept)", "Precipitation", "Soilmoisture", "KDD"),
+                         show.re.var = TRUE, 
+                         dv.labels = "Effects of environmental variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+ENV_survey_cluster1 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(ENV_survey_cluster1) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster1), 0.7*nrow(cluster1), replace = FALSE)
+  dat_train <- cluster1[dat_index,]
+  dat_valid <- cluster1[-dat_index,]
+  
+  model_env_3 <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + (1|survey), data = dat_train, REML = TRUE, verbose = FALSE)
+  
+  pred <- predict(model_env_3, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+ENV_survey_cluster1$RMSE <- vec_rmse
+ENV_survey_cluster1$R2 <- vec_rsq
+ENV_survey_cluster1$cluster <- "Cluster 1"
+ENV_survey_cluster1$r.e. <- "survey"
+ENV_survey_cluster1$model <- 'ENV'
+
+
+```
+
+#get estimates for Model 3 with standardized data 
+```{r}
+#setup model
+model_env_3_stand <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + (1|survey), data = cluster1_stand, REML = TRUE, verbose = FALSE)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_env_3_stand,
+                           axis.labels = c("KDD", "Soilmoisture", "Precipitation"),colors = c("navy", "orange"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,
+                           title = "Effects of environmental variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_survey_env_stand.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+
+```
+
+#4. MODEL: Cluster 1 - ENVIRONMENT - no random effect 
+```{r}
+model_env_4 <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result, data = cluster1)
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_env_4,
+                           axis.labels = c("KDD", "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of environmental variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_lm_env.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_env_4,
+                         show.p = FALSE,
+                         pred.labels = c("(Intercept)" ,"Precipitation", "Soilmoisture", "KDD"),
+                         show.re.var = TRUE, 
+                         dv.labels = "Effects of environmental variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+ENV_lm_cluster1 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(ENV_lm_cluster1) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster1), 0.7*nrow(cluster1), replace = FALSE)
+  dat_train <- cluster1[dat_index,]
+  dat_valid <- cluster1[-dat_index,]
+  
+  model_env_4 <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result, data = dat_train)
+  
+  pred <- predict(model_env_4, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+ENV_lm_cluster1$RMSE <- vec_rmse
+ENV_lm_cluster1$R2 <- vec_rsq
+ENV_lm_cluster1$cluster <- "Cluster 1"
+ENV_lm_cluster1$r.e. <- "no random effect"
+ENV_lm_cluster1$model <- 'ENV'
+
+
+```
+
+#get estimates for Model 4 with standardized data 
+```{r}
+#setup model
+model_env_4_stand <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result, data = cluster1_stand)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_env_4_stand,
+                           axis.labels = c("KDD", "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of environmental variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_lm_env_stand.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+
+```
+
+#5. MODEL: Cluster 1 - MGMT + ENV - survey as random effect
+```{r}
+model_comb_5 <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid + (1|survey), data = cluster1, REML = TRUE, 
+                     verbose = FALSE)
+
+#plot ad export estimates 
+plot_5 <- sjPlot::plot_model(model_comb_5,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer", "KDD", 
+                                           "Soilmoisture", "Precipitation"),colors = c("navy", "orange"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,
+                           title = "Effect sizes environmental and \nmanagement variables - Cluster A")
+
+plot_5 <- plot_5 + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_survey_comb.png", height = 600, width = 650)
+print(plot_5)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_comb_5,
+                         show.p = FALSE,
+                         pred.labels = c("(Intercept)", "Precipitation", "Soilmoisture", "KDD", "Amount of nitrogen fertilizer", "Use of 
+                                         intercropping", "Use of hybrid seeds"),
+                         show.re.var = TRUE, 
+                         dv.labels = "Effects of environmental and management variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+COMB_survey_cluster1 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(COMB_survey_cluster1) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster1), 0.7*nrow(cluster1), replace = FALSE)
+  dat_train <- cluster1[dat_index,]
+  dat_valid <- cluster1[-dat_index,]
+  
+  model_comb_5 <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid + (1|survey), data = dat_train, REML = TRUE, 
+                       verbose = FALSE)
+  
+  pred <- predict(model_comb_5, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+COMB_survey_cluster1$RMSE <- vec_rmse
+COMB_survey_cluster1$R2 <- vec_rsq
+COMB_survey_cluster1$cluster <- "Cluster 1"
+COMB_survey_cluster1$r.e. <- "survey"
+COMB_survey_cluster1$model <- 'COMB'
+
+```
+
+#get estimates for Model 5 with standardized data 
+```{r}
+#setup model
+model_comb_5_stand <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid + (1|survey), data = cluster1_stand, 
+                           REML = TRUE, verbose = FALSE)
+
+
+#plot ad export estimates 
+plot_5_stand <- sjPlot::plot_model(model_comb_5_stand,
+                   axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer", "KDD", 
+                                           "Soilmoisture", "Precipitation"),colors = c("navy", "orange"),
+                   show.values = TRUE, show.p = FALSE, value.size = 6,
+                   title = "Effect sizes environmental and \nmanagement variables - Cluster A (standardized)")
+
+plot_5_stand <- plot_5_stand + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_survey_comb_stand.png", height = 600, width = 650)
+print(plot_5_stand)
+dev.off()
+
+
+```
+
+#6. MODEL: Cluster 1 - MGMT + ENV - no random effect
+```{r}
+model_comb_6 <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid, data = cluster1)
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_comb_6,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer", "KDD", 
+                                           "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of environmental and management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_lm_comb.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_comb_6,
+                         show.p = FALSE,
+                         pred.labels = c("(Intercept)", "Precipitation", "Soilmoisture", "KDD", "Nitrogen inputs", "Intercrop",
+                                         "Hybrid seeds"),
+                         show.re.var = TRUE, 
+                         dv.labels = "Effects of envionmental and management variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+COMB_lm_cluster1 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(COMB_lm_cluster1) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster1), 0.7*nrow(cluster1), replace = FALSE)
+  dat_train <- cluster1[dat_index,]
+  dat_valid <- cluster1[-dat_index,]
+  
+  model_comb_6 <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid, data = dat_train)
+  
+  pred <- predict(model_comb_6, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+COMB_lm_cluster1$RMSE <- vec_rmse
+COMB_lm_cluster1$R2 <- vec_rsq
+COMB_lm_cluster1$cluster <- "Cluster 1"
+COMB_lm_cluster1$r.e. <- "no random effect"
+COMB_lm_cluster1$model <- 'COMB'
+
+```
+
+#get estimates for Model 6 with standardized data 
+```{r}
+#setup model
+model_comb_6_stand <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid, data = cluster1_stand)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_comb_6_stand,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer", "KDD", 
+                                           "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of environmental and management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster1_lm_comb_stand.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+
+```
+
+#7. MODEL: Cluster 2 - MGMT - survey as random effect 
+```{r}
+#setup model
+model_mgmt_7 <- lmer(yield_kg_ph ~ N_kg_ph + intercrop + hybrid + (1|survey), data = cluster2, REML = TRUE, verbose = FALSE)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_mgmt_7,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_survey_mgmt.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_mgmt_7,
+                         show.p = FALSE,
+                         show.re.var = TRUE, 
+                         pred.labels = c("(Intercept)", "Amount of nitrogen fertilizer", "Use of intercropping", "Use of hybrid seeds"),
+                         dv.labels = "Effects of management variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+MGMT_survey_cluster2 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(MGMT_survey_cluster2) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster2), 0.7*nrow(cluster2), replace = FALSE)
+  dat_train <- cluster2[dat_index,]
+  dat_valid <- cluster2[-dat_index,]
+  
+  model_mgmt_7 <- lmer(yield_kg_ph ~ N_kg_ph + intercrop + hybrid + (1|survey), data = dat_train, REML = TRUE, verbose = FALSE)
+  
+  pred <- predict(model_mgmt_7, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+MGMT_survey_cluster2$RMSE <- vec_rmse
+MGMT_survey_cluster2$R2 <- vec_rsq
+MGMT_survey_cluster2$cluster <- "Cluster 2"
+MGMT_survey_cluster2$r.e. <- "survey"
+MGMT_survey_cluster2$model <- 'MGMT'
+
+```
+
+#get estimates for Model 7 with standardized data 
+```{r}
+#setup model
+model_mgmt_7_stand <- lmer(yield_kg_ph ~ N_kg_ph + intercrop + hybrid + (1|survey), data = cluster2_stand, REML = TRUE, verbose = FALSE)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_mgmt_7_stand,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_survey_mgmt_stand.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+
+```
+
+#8. MODEL : Cluster 2 - MGMT - no random effect
+```{r}
+model_mgmt_8 <- lm(yield_kg_ph ~ N_kg_ph + intercrop + hybrid, data = cluster2)
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_mgmt_8,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_lm_mgmt.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_mgmt_8,
+                         show.p = FALSE,
+                         show.re.var = TRUE, 
+                         pred.labels = c("(Intercept)", "Amount of nitrogen fertilizer", "Use of intercropping", "Use of hybrid seeds"),
+                         dv.labels = "Effects of management variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+MGMT_lm_cluster2 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(MGMT_lm_cluster2) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster2), 0.7*nrow(cluster2), replace = FALSE)
+  dat_train <- cluster2[dat_index,]
+  dat_valid <- cluster2[-dat_index,]
+  
+  model_mgmt_8 <- lm(yield_kg_ph ~ N_kg_ph + intercrop + hybrid, data = dat_train)
+  
+  pred <- predict(model_mgmt_8, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+MGMT_lm_cluster2$RMSE <- vec_rmse
+MGMT_lm_cluster2$R2 <- vec_rsq
+MGMT_lm_cluster2$cluster <- "Cluster 2"
+MGMT_lm_cluster2$r.e. <- "no random effect"
+MGMT_lm_cluster2$model <- 'MGMT'
+
+```
+
+#get estimates for Model 8 with standardized data 
+```{r}
+#setup model
+model_mgmt_8_stand <- lm(yield_kg_ph ~ N_kg_ph + intercrop + hybrid, data = cluster2_stand)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_mgmt_8_stand,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_lm_mgmt_stand.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+```
+
+#9. MODEL: Cluster 2 - ENVIRONMENT - survey as random effect 
+```{r}
+model_env_9 <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + (1|survey), data = cluster2, REML = TRUE, verbose = FALSE)
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_env_9,
+                           axis.labels = c("KDD", "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of environmental variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_survey_env.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_env_9,
+                         show.p = FALSE,
+                         pred.labels = c("(Intercept)", "Precipitation", "Soilmoisture", "KDD"),
+                         show.re.var = TRUE, 
+                         dv.labels = "Effects of environmental variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+ENV_survey_cluster2 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(ENV_survey_cluster2) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster2), 0.7*nrow(cluster2), replace = FALSE)
+  dat_train <- cluster2[dat_index,]
+  dat_valid <- cluster2[-dat_index,]
+  
+  model_env_9 <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + (1|survey), data = dat_train, REML = TRUE, verbose = FALSE)
+  
+  pred <- predict(model_env_9, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+ENV_survey_cluster2$RMSE <- vec_rmse
+ENV_survey_cluster2$R2 <- vec_rsq
+ENV_survey_cluster2$cluster <- "Cluster 2"
+ENV_survey_cluster2$r.e. <- "survey"
+ENV_survey_cluster2$model <- 'ENV'
+
+
+```
+
+#get estimates for Model 9 with standardized data 
+```{r}
+#setup model
+model_env_9_stand <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + (1|survey), data = cluster2_stand, REML = TRUE, verbose = FALSE)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_env_9_stand,
+                           axis.labels = c("KDD", "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of environmental variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_survey_env_stand.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+
+```
+
+#10. MODEL: Cluster 2 - ENVIRONMENT - no random effect 
+```{r}
+model_env_10 <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result, data = cluster2)
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_env_10,
+                           axis.labels = c("KDD", "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of environmental variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_lm_env.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_env_10,
+                         show.p = FALSE,
+                         pred.labels = c("(Intercept)", "Precipitation", "Soilmoisture", "KDD"),
+                         show.re.var = TRUE, 
+                         dv.labels = "Effects of environmental variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+ENV_lm_cluster2 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(ENV_lm_cluster2) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster2), 0.7*nrow(cluster2), replace = FALSE)
+  dat_train <- cluster2[dat_index,]
+  dat_valid <- cluster2[-dat_index,]
+  
+  model_env_10 <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result, data = dat_train)
+  
+  pred <- predict(model_env_10, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+ENV_lm_cluster2$RMSE <- vec_rmse
+ENV_lm_cluster2$R2 <- vec_rsq
+ENV_lm_cluster2$cluster <- "Cluster 2"
+ENV_lm_cluster2$r.e. <- "no random effect"
+ENV_lm_cluster2$model <- 'ENV'
+
+
+```
+
+#get estimates for Model 10 with standardized data 
+```{r}
+#setup model
+model_env_10_stand <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result, data = cluster2_stand)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_env_10_stand,
+                           axis.labels = c("KDD", "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of environmental variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_lm_env_stand.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+
+```
+
+#11. MODEL: Cluster 2 - MGMT + ENV - survey as random effect
+```{r}
+model_comb_11 <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid + (1|survey), data = cluster2, REML = TRUE, 
+                     verbose = FALSE)
+
+#plot ad export estimates 
+plot_11 <- sjPlot::plot_model(model_comb_11,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer", "KDD", 
+                                           "Soil moisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effect sizes environmental and \nmanagement variables - Cluster B")
+
+plot_11 <- plot_11 + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_survey_comb.png", height = 600, width = 650)
+print(plot_11)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_comb_11,
+                         show.p = FALSE,
+                         pred.labels = c("(Intercept)", "Precipitation", "Soilmoisture", "KDD", "Amount of nitrogen fertilizer", "Use of 
+                                         intercropping", "Use of hybrid seeds"),
+                         show.re.var = TRUE, 
+                         dv.labels = "Effects of environmental and management variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+COMB_survey_cluster2 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(COMB_survey_cluster2) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster2), 0.7*nrow(cluster2), replace = FALSE)
+  dat_train <- cluster2[dat_index,]
+  dat_valid <- cluster2[-dat_index,]
+  
+  model_comb_11 <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid + (1|survey), data = dat_train, REML = TRUE, 
+                       verbose = FALSE)
+  
+  pred <- predict(model_comb_11, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+COMB_survey_cluster2$RMSE <- vec_rmse
+COMB_survey_cluster2$R2 <- vec_rsq
+COMB_survey_cluster2$cluster <- "Cluster 2"
+COMB_survey_cluster2$r.e. <- "survey"
+COMB_survey_cluster2$model <- 'COMB'
+
+```
+
+#get estimates for Model 11 with standardized data 
+```{r}
+#setup model
+model_comb_11_stand <- lmer(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid + (1|survey), data = cluster2_stand)
+
+
+#plot ad export estimates 
+plot_11_stand <- sjPlot::plot_model(model_comb_11_stand,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer", "KDD", 
+                                           "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effect sizes environmental and \nmanagement variables - Cluster B (standardized)")
+
+plot_11_stand <- plot_11_stand + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_survey_comb_stand.png", height = 600, width = 650)
+print(plot_11_stand)
+dev.off()
+
+
+```
+
+#12. MODEL: Cluster 2 - MGMT + ENV - no random effect
+```{r}
+model_comb_12 <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid, data = cluster2)
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_comb_12,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer", "KDD", 
+                                           "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6,colors = c("navy", "orange"),
+                           title = "Effects of environmental and management variables on maize yields")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_lm_comb.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+#get table with results 
+tab <- sjPlot::tab_model(model_comb_12,
+                         show.p = FALSE,
+                         pred.labels = c("(Intercept)", "Precipitation", "Soilmoisture", "KDD", "Amount of nitrogen fertilizer", 
+                                         "Use of intercropping", "Use of hybrid seeds"),
+                         show.re.var = TRUE, 
+                         dv.labels = "Effects of environmental and management variables on maize yields")
+
+print(tab)
+
+
+#function for r2
+rsq <- function(x, y) { cor(x, y) ^ 2 }
+
+#create vectors
+vec_rmse <- NULL
+vec_rsq <- NULL
+
+#create df 
+COMB_lm_cluster2 <- as.data.frame(matrix(ncol = 5, nrow = 100))
+colnames(COMB_lm_cluster2) <- c("RMSE", "R2", "cluster", "r.e.", "model")
+
+#validate
+for(i in 1:100){
+  set.seed(i)
+  dat_index <- sample(nrow(cluster2), 0.7*nrow(cluster2), replace = FALSE)
+  dat_train <- cluster2[dat_index,]
+  dat_valid <- cluster2[-dat_index,]
+  
+  model_comb_12 <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid, data = dat_train)
+  
+  pred <- predict(model_comb_12, dat_valid)
+
+  vec_rmse <- c(vec_rmse,rmse(pred,dat_valid$yield_kg_ph))
+  vec_rsq <- c(vec_rsq, rsq(pred, dat_valid$yield_kg_ph))
+
+}
+
+mean(vec_rmse)
+mean(vec_rsq)
+
+COMB_lm_cluster2$RMSE <- vec_rmse
+COMB_lm_cluster2$R2 <- vec_rsq
+COMB_lm_cluster2$cluster <- "Cluster 2"
+COMB_lm_cluster2$r.e. <- "no random effect"
+COMB_lm_cluster2$model <- 'COMB'
+
+```
+
+#get estimates for Model 12 with standardized data 
+```{r}
+#setup model
+model_comb_12_stand <- lm(yield_kg_ph ~ chirps_sum + esa_avg + kdd_result + N_kg_ph + intercrop + hybrid, data = cluster2_stand)
+
+
+#plot ad export estimates 
+plot <- sjPlot::plot_model(model_comb_12_stand,
+                           axis.labels = c("Use of hybrid seeds", "Use of intercropping", "Amount of nitrogen fertilizer", "KDD", 
+                                           "Soilmoisture", "Precipitation"),
+                           show.values = TRUE, show.p = FALSE, value.size = 6, colors = c("navy", "orange"),
+                           title = "Effect sizes environmental and \nmanagement variables")
+
+plot <- plot + font_size(title = 16, axis_title.x = 14, axis_title.y = 14, labels.x = 14, labels.y = 14)
+
+png("D:/LSG/Lena/IFPRI/model_BA/est_cluster2_lm_comb_stand.png", height = 600, width = 650)
+print(plot)
+dev.off()
+
+
+```
+
+#setup and export results dataframe
+```{r}
+
+results_model <- rbind(ENV_lm_cluster1, ENV_lm_cluster2, ENV_survey_cluster1, ENV_survey_cluster2, MGMT_lm_cluster1, MGMT_lm_cluster2, 
+                       MGMT_survey_cluster1, MGMT_survey_cluster2, COMB_lm_cluster1, COMB_lm_cluster2, COMB_survey_cluster1, COMB_survey_cluster2)
+
+
+
+write.csv(results_model, "D:/LSG/Lena/IFPRI/model_BA/rmse_rsq_model.csv", row.names = FALSE)
+
+```
+
+#combine int one plot 
+```{r}
+
+plot_comb <- ggdraw() +
+  draw_plot(plot_5, x = 0, y =.5, width = .5, height = .5) +
+  draw_plot(plot_5_stand, x = 0, y = 0, width = .5, height = .5) +
+  draw_plot(plot_11, x = .5, y = .5, width = .5, height = .5) +
+  draw_plot(plot_11_stand, x = .5, y = 0, width = .5, height = .5)
+
+png("D:/LSG/Lena/IFPRI/model_BA/plot_comb.png", height = 1000, width = 1000)  
+print(plot_comb)  
+dev.off()  
+
+
+
+```

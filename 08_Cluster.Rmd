@@ -1,0 +1,95 @@
+---
+title: "Cluster"
+author: "Lena Bueschel"
+date: "23 7 2022"
+output: html_document
+---
+```{r}
+library(tidyverse)
+library(variables)
+library(dplyr)
+library(stringi)
+library(stringr)
+library(GGally)
+library(scales)
+library(pals)
+library(viridis)
+library(lubridate)
+
+setwd("D:/LSG/Lena/IFPRI")
+```
+
+#1. get data and create cluster
+```{r}
+#get data
+data <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/final_selection_Neq_complete.csv")
+
+data$cluster <- NA
+
+data$cluster[which((data$country%in%c("Rwanda", "Malawi", "Burundi"))&(data$plant_date>150))] <- "Cluster 1"
+
+data$cluster[which((data$country== "Tanzania")|(data$country=="Kenya")|((data$country=="Rwanda")&(data$plant_date<150)))] <- "Cluster 2"
+
+
+cluster1 <- data[which(data$cluster == "Cluster 1"),]
+cluster2 <- data[which(data$cluster == "Cluster 2"),]
+
+
+
+
+min(cluster2$plant_date)
+max(cluster2$plant_date)
+
+min(cluster2$harvest_date)
+max(cluster2$harvest_date)
+```
+
+#2. plot clusters 
+```{r}
+data_short <- dplyr::select(data, ID, country, year, survey, gs_length, yield_kg_ph, plant_date, harvest_date, field_latitude, field_longitude, cluster)
+
+data_short$DOY_plant <- yday(data_short$plant_date)
+data_short$DOY_harvest <- yday(data_short$harvest_date)
+
+data_short$cluster[which(data_short$cluster == "Cluster 1")] <- "Cluster A"
+data_short$cluster[which(data_short$cluster == "Cluster 2")] <- "Cluster B"
+
+data_sum <- data_short %>% group_by(DOY_plant, DOY_harvest) %>%
+              summarise(survey = unique(survey),
+                        .groups = 'drop')
+
+
+plot_cluster <- ggplot(data = data_sum, aes(x = DOY_plant, y = DOY_harvest, color = survey)) +
+  geom_rect(aes(xmin = 210, xmax = 360, ymin = 1, ymax = 110, fill = "Cluster A"), color = "grey")+
+  geom_rect(aes(xmin = 0, xmax = 165, ymin= 130, ymax = 370, fill = "Cluster B"), color = "grey") +
+  geom_rect(aes(xmin = 290, xmax = 370, ymin= 110, ymax =275, fill = "Cluster B"), color = "grey") +
+  geom_point(alpha = 0.9, shape = 19) +
+  labs(x = "Plant Date (DOY)", y = "Harvest Date (DOY)", color = "Survey") +
+  theme(axis.title = element_text(size = 14), axis.text = element_text(size = 14), legend.position = "right", legend.title = element_text(size = 14), 
+        legend.text = element_text(size =12), legend.key = element_rect(fill = "white", colour = "black")) +
+  scale_fill_manual(name = "", values = c("Cluster A" = "palegreen", "Cluster B" = "lightblue"))
+
+png("D:/LSG/Lena/IFPRI/plots_growseas/cluster.png", height = 400, width = 600)
+print(plot_cluster)
+dev.off()
+
+
+data_cl <- data_short %>% group_by(DOY_plant, DOY_harvest, cluster) %>%
+  summarise(survey = unique(survey), 
+            .groups = 'drop')
+
+
+plot_sep <- ggplot(data = data_cl, aes(x = DOY_plant, y = DOY_harvest, color = cluster)) +
+  geom_point(alpha = 0.9, shape = 19) +
+  labs(x = "Plant Date (DOY)", y = "Harvest Date (DOY)", color = "Cluster") +
+  theme(axis.title = element_text(size = 14), axis.text = element_text(size = 14), legend.position = "right", legend.title = element_text(size = 14), 
+        legend.text = element_text(size =12))
+
+png("D:/LSG/Lena/IFPRI/plots_growseas/cluster_sep.png", height = 400, width = 600)
+print(plot_sep)
+dev.off()
+
+
+
+```
+

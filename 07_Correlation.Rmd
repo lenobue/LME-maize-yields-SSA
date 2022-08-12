@@ -1,0 +1,174 @@
+---
+title: "correlation"
+author: "Lena Bueschel"
+date: "07/2022"
+output: word_document
+---
+library(tidyverse)
+library(variables)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(GGally)
+library(data.table)
+library(ggpubr)
+
+setwd("D:/LSG/Lena/IFPRI")
+
+
+```{r}
+#surveys with fertilizer
+data_Neq <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/final_selection_Neq_complete.csv")
+data_Neq$DOY_plant <- yday(data_Neq$plant_date)
+
+#divide into cluster 
+cluster1 <- data_Neq[which((data_Neq$country%in%c("Rwanda", "Malawi", "Burundi"))&(data_Neq$DOY_plant>150)),]
+
+cluster2 <- data_Neq[which((data_Neq$country== "Tanzania")|(data_Neq$country=="Kenya")|((data_Neq$country=="Rwanda")&(data_Neq$DOY_plant<150))),]
+
+```
+
+#Cluster 1 (every survey) - MAX 
+```{r}
+data_corr_cl1 <- select(cluster1, chirps_sum, esa_avg, era_temp_mean_avg, era_temp_min_avg, era_temp_max_avg, kdd_result, gs_length,
+                      N_kg_ph, yield_kg_ph)
+names(data_corr_cl1) <-  c("PREC", "SOILMOIST", "TAVG", "TMIN", "TMAX", "KDD", "GS_LENGTH", "N-EQ", "YIELD")
+
+test <- round(cor(data_corr_cl1), 1)
+test_plot <- ggcorrplot::ggcorrplot(test, type = "lower", lab = TRUE, colors = c("red", "white", "blue"), tl.cex = 18, lab_size = 6) +
+              labs(title = "Cluster A") +
+              theme(title = element_text(size = 20, hjust = 1), legend.title = element_text(size = 18), legend.text = element_text(size = 16))
+
+```
+
+#cluster 2 (every survey) - MAX
+```{r}
+data_corr_cl2 <- select(cluster2, chirps_sum, esa_avg, era_temp_mean_avg, era_temp_min_avg, era_temp_max_avg, kdd_result, gs_length,
+                      N_kg_ph, yield_kg_ph)
+names(data_corr_cl2) <-  c("PREC", "SOILMOIST", "TAVG", "TMIN", "TMAX", "KDD", "GS_LENGTH", "N-EQ", "YIELD")
+
+
+test2 <- round(cor(data_corr_cl2), 1)
+test_plot2 <- ggcorrplot::ggcorrplot(test2, type = "lower", lab = TRUE, colors = c("red", "white", "blue"), tl.cex = 18, lab_size = 6) +
+              labs(title = "Cluster B") +
+              theme(title = element_text(size = 20, hjust = 1),legend.title = element_text(size = 18), legend.text = element_text(size = 16))
+
+plot_comb <- ggarrange(test_plot, test_plot2)
+
+png("D:/LSG/Lena/IFPRI/corrplots_final/corr_max_comb_new.png", height = 600, width = 1000)
+print(plot_comb)
+dev.off()
+```
+
+
+#loop for every survey - Cluster 1 - MAX
+```{r}
+#select important data
+data_corr_cl1 <- select(cluster1, survey, chirps_sum, esa_avg, era_temp_mean_avg, era_temp_min_avg, era_temp_max_avg, kdd_result, gs_length,
+                    N_kg_ph, yield_kg_ph)
+
+for(i in 1:length(unique(data_corr_cl1$survey))){
+  data_corr_sel <- data_corr_cl1[which(data_corr_cl1$survey==unique(data_corr_cl1$survey)[i]),]
+  names(data_corr_sel) <- c("survey", "PRCP_CHIRPS", "SM_ESACCI", "TAVG_ERA5","TMIN_ERA5", "TMAX_ERA5", "KDD_result", "GS_LENGTH",
+                            "N-EQ", "YIELD")
+  
+  plot1 <- ggcorr(data_corr_sel[,c(2:10)], method = c("pairwise", "pearson"), label = TRUE, low = "red", mid = "white", high = "blue",
+                  label_size = 6) +
+    ggtitle(data_corr_sel$survey)
+  
+  png(paste0("D:/LSG/Lena/IFPRI/corrplots3/", data_corr_sel$survey[1], "cluster1.png"), height=1000, width=1000)
+    print(plot1)
+  dev.off()
+}
+```
+
+#loop for every survey - Cluster 2 - MAX
+```{r}
+#select important data
+data_corr_cl2 <- select(cluster2, survey, chirps_sum, esa_avg, era_temp_mean_avg, era_temp_min_avg, era_temp_max_avg, kdd_result, gs_length,
+                    N_kg_ph, yield_kg_ph)
+
+for(i in 1:length(unique(data_corr_cl2$survey))){
+  data_corr_sel <- data_corr_cl2[which(data_corr_cl2$survey==unique(data_corr_cl2$survey)[i]),]
+  names(data_corr_sel) <- c("survey", "PRCP_CHIRPS", "SM_ESACCI", "TAVG_ERA5","TMIN_ERA5", "TMAX_ERA5", "KDD_result", "GS_LENGTH",
+                            "N-EQ", "YIELD")
+  
+  plot1 <- ggcorr(data_corr_sel[,c(2:10)], method = c("pairwise", "pearson"), label = TRUE, low = "red", mid = "white", high = "blue",
+                  label_size = 6) +
+    ggtitle(data_corr_sel$survey)
+  
+  png(paste0("D:/LSG/Lena/IFPRI/corrplots3/", data_corr_sel$survey[1], "_cluster2.png"), height=1000, width=1000)
+    print(plot1)
+  dev.off()
+}
+```
+
+#Cluster 1 (every survey) - REDUCED
+```{r}
+data_corr_cl1 <- select(cluster1, chirps_sum, esa_avg, kdd_result, N_kg_ph, yield_kg_ph)
+names(data_corr_cl1) <-  c("PREC", "SOILMOIST", "KDD", "N-EQ", "YIELD")
+
+red_corr1 <- round(cor(data_corr_cl1),1)
+
+plot_red1 <- ggcorrplot::ggcorrplot(red_corr1, type = "lower", lab = TRUE, colors = c("red", "white", "blue"), tl.cex = 18, lab_size = 6) +
+              labs(title = "Cluster A") +
+              theme(title = element_text(size = 20, hjust = 1),legend.title = element_text(size = 18), legend.text = element_text(size = 16))
+```
+
+#Cluster 2 (every survey) - REDUCED
+```{r}
+data_corr_cl2 <- select(cluster2, chirps_sum, esa_avg, kdd_result, N_kg_ph, yield_kg_ph)
+names(data_corr_cl2) <-  c("PREC", "SOILMOIST", "KDD", "N-EQ", "YIELD")
+
+
+red_corr2 <- round(cor(data_corr_cl2), 1)
+
+plot_red2 <- ggcorrplot::ggcorrplot(red_corr2, type = "lower", lab = TRUE, colors = c("red", "white", "blue"), tl.cex = 18, lab_size = 6) +
+              labs(title = "Cluster B") +
+              theme(title = element_text(size = 20, hjust = 1),legend.title = element_text(size = 18), legend.text = element_text(size = 16))
+
+plot_red_comb <- ggarrange(plot_red1, plot_red2)
+
+png("D:/LSG/Lena/IFPRI/corrplots_final/corr_red_comb_new.png", height = 400, width = 800)
+print(plot_red_comb)
+dev.off()
+```
+
+#loop for every survey - Cluster 1 - REDUCED
+```{r}
+#select important data
+data_corr_cl1 <- select(cluster1, survey, chirps_sum, esa_avg, kdd_result, N_kg_ph, yield_kg_ph)
+
+for(i in 1:length(unique(data_corr_cl1$survey))){
+  data_corr_sel <- data_corr_cl1[which(data_corr_cl1$survey==unique(data_corr_cl1$survey)[i]),]
+  names(data_corr_sel) <- c("survey", "PRCP_CHIRPS", "SM_ESACCI", "KDD_result",
+                            "N-EQ", "YIELD")
+  
+  plot1 <- ggcorr(data_corr_sel[,c(2:6)], method = c("pairwise", "pearson"), label = TRUE, low = "red", mid = "white", high = "blue", label_size = 6) +
+    ggtitle(data_corr_sel$survey)
+  
+  png(paste0("D:/LSG/Lena/IFPRI/corrplots3/", data_corr_sel$survey[1], "_cluster1_red.png"), height=1000, width=1000)
+    print(plot1)
+  dev.off()
+}
+```
+
+#loop for every survey - Cluster 2 - REDUCED
+```{r}
+#select important data
+data_corr_cl2 <- select(cluster2, survey, chirps_sum, esa_avg, kdd_result, N_kg_ph, yield_kg_ph)
+
+for(i in 1:length(unique(data_corr_cl2$survey))){
+  data_corr_sel <- data_corr_cl2[which(data_corr_cl2$survey==unique(data_corr_cl2$survey)[i]),]
+  names(data_corr_sel) <- c("survey", "PRCP_CHIRPS", "SM_ESACCI", "KDD_result",
+                            "N-EQ", "YIELD")
+  
+  plot1 <- ggcorr(data_corr_sel[,c(2:6)], method = c("pairwise", "pearson"), label = TRUE, low = "red", mid = "white", high = "blue", label_size = 6) +
+    ggtitle(data_corr_sel$survey)
+  
+  png(paste0("D:/LSG/Lena/IFPRI/corrplots3/", data_corr_sel$survey[1], "_cluster2_red.png"), height=1000, width=1000)
+    print(plot1)
+  dev.off()
+}
+```
+

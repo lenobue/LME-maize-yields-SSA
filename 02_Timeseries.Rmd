@@ -1,0 +1,461 @@
+---
+title: "Documentation ts"
+author: "Lena Bueschel"
+date: "06/2022"
+output: word_document
+---
+
+#Preperation - load packages
+library(raster)
+library(ncdf4)
+library(sp)
+library(rgdal)
+library(tidyverse)
+library(variables)
+library(reshape2)
+library(lubridate)
+library(dplyr)
+library(data.table)
+
+#set working directory 
+setwd("D:/LSG/Lena/IFPRI")
+
+
+#1. EXTRACT SOILMOISTURE VALUES FOR CROPCUT LOCATIONS - ESA CCI DATASETS 
+```{r}
+#import dataset one acre fund for information about the cropcut locations
+oneaf_DATA_final <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/CropCuts_1AF_finalselection.csv")
+#get processed 1af file (export from 1st file)
+
+
+for(y in 2016:2020){
+
+  data <- filter(oneaf_DATA_final, year == y, field_latitude != 'NA', field_longitude != 'NA')
+  
+  #get coordinates and create dataframe
+  coordinates_shp <- SpatialPointsDataFrame(data=data, coords=data[,c(7,6)], 
+                                                         proj4string = CRS("+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0"))
+
+  #import netCDF files 
+  ESA_CCI_files_prev <- list.files(paste0("D:/LSG/Lena/IFPRI/ESA_CCI_SM_v06.1/", y-1), full.names=T) 
+  ESA_CCI_files_act <- list.files(paste0("D:/LSG/Lena/IFPRI/ESA_CCI_SM_v06.1/", y), full.names=T)   
+
+  #combine netCDF files to also extract values from previous year 
+  ESA_CCI_files_new <- c(ESA_CCI_files_prev, ESA_CCI_files_act)
+
+  #setup dataframe for results
+  results_soilmoist <- as.data.frame(matrix(nrow = length(ESA_CCI_files_new), ncol = length(coordinates_shp)))
+
+  #name columns with ID_lena
+  for (j in 1:length(coordinates_shp)) {
+    colnames(results_soilmoist) <- c(data$ID)
+  }
+
+
+#create raster data & extract soilmoisture values
+  for (i in 1:length(ESA_CCI_files_new)) {
+    raster_ESA_CCI <- raster(ESA_CCI_files_new[i], varname = "sm")
+    extract_results <- raster::extract(raster_ESA_CCI, coordinates_shp)
+    results_soilmoist[i, 1:length(coordinates_shp)] <- extract_results
+    if(i %in% seq(from = 50, to = NROW(ESA_CCI_files_new), by = 50)){ print(i)}
+  }
+
+  #name rows with date 
+  for (l in 1:length(ESA_CCI_files_new)) {
+    date <- basename(ESA_CCI_files_new[l])
+    date2 <- substr(date, 39, 46)
+    row.names(results_soilmoist)[l] <- date2
+  }
+
+#create table and export  
+write.csv(results_soilmoist, paste0("D:/LSG/Lena/IFPRI/ESA_CCI_SM_v06.1/Export Survey2021/cc_maize/soilmoist_daily_",y,"_new.csv"))
+}
+
+test2 <- as.data.frame(fread("D:/LSG/Lena/IFPRI/ESA_CCI_SM_v06.1/Export Survey2021/cc_maize/soilmoist_daily_2020_new.csv"))
+```
+
+
+#2. EXTRACT PRECIPITATION VALUES FOR CROPCUT LOCATIONS - CHIRPS DATASETS
+```{r}
+#import OneAcreFund dataset
+oneaf_DATA_final <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/CropCuts_1AF_finalselection.csv")
+
+for(y in 2016:2020){
+  
+  #get data for year of interest 
+  data <- filter(oneaf_DATA_final, year == y, field_latitude != 'NA', field_longitude != 'NA') 
+  
+  #get coordinates and create dataframe
+  points <- SpatialPointsDataFrame(data=data, coords=data[,c(7,6)], 
+                                    proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+  #import tifFs for considered years -> CHANGE YEAR IN FILEPATHS 
+  CHIRPS_p05_files_prev <- list.files(paste0("D:/LSG/Lena/IFPRI/CHIRPS p0.5/CHIRPS_p05_",y-1), full.names = T)
+  CHIRPS_p05_files_act <- list.files(paste0("D:/LSG/Lena/IFPRI/CHIRPS p0.5/CHIRPS_p05_",y), full.names = T)
+
+  #combine files to also get data from previous year
+  CHIRPS_p05_files_new <- c(CHIRPS_p05_files_prev, CHIRPS_p05_files_act)
+  
+  #setup dataframe for extracted values for considered years
+  results_prec <- as.data.frame(matrix(nrow = length(CHIRPS_p05_files_new), ncol = length(points)))
+
+  #name columns with ID_new 
+  for (i in 1:length(points)) {
+    colnames(results_prec) <- c(data$ID)
+  }
+  
+  #get tiffs for each day and extract value from data of considered year 
+  for (i in 1:length(CHIRPS_p05_files_new)) {
+    raster_CHIRPS_p05_new <- raster::raster(CHIRPS_p05_files_new[i])
+    extract_results <- raster::extract(raster_CHIRPS_p05_new, points)
+    results_prec[i, 1:length(points)] <- extract_results
+    if (i %in% seq(from=50, to=NROW(CHIRPS_p05_files_new), by=50)) { print(i) }
+  }
+  
+  for (l in 1:length(CHIRPS_p05_files_new)) {
+    date <- basename(CHIRPS_p05_files_new[l])
+    date2 <- substr(date, 13, 22)
+    row.names(results_prec)[l] <- date2
+  }
+
+  #export dataframe 
+  write.csv(results_prec, paste0("D:/LSG/Lena/IFPRI/CHIRPS p0.5/Export/precipitation_daily_",y,"_new.csv"))
+  
+}
+
+```
+
+#3. EXTRACT HOURLY VALUES FROM ERA5-SOILWATER FOR THE CONSIDERED YEARS + PREVIOUS YEARS 
+```{r}
+#import OneAcreFund dataset
+oneaf_DATA_final <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/CropCuts_1AF_finalselection.csv")
+
+
+for (y in 2020) {
+  #get data for year of interest 
+  data <- filter(oneaf_DATA_final, year == y, field_latitude != 'NA', field_longitude != 'NA')
+  
+  #get coordinates and create dataframe 
+  points <- SpatialPointsDataFrame(data=data, coords=data[,c(7,6)], 
+                                    proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+  #import netcdf-files as raster stack 
+  ERA5_VSWL1_prev <- raster::stack(paste0("D:/LSG/Lena/IFPRI/ERA5_Land/VSWL1_DATA/ECMWF-DAILY_ACCUMULATION_volumetric_soil_water_layer1_",y-1,".nc"),
+                                  varname = "swvl1") 
+  ERA5_VSWL1_act <- raster::stack(paste0("D:/LSG/Lena/IFPRI/ERA5_Land/VSWL1_DATA/ECMWF-DAILY_ACCUMULATION_volumetric_soil_water_layer1_",y,".nc"), 
+                                  varname = "swvl1") 
+
+
+  ERA_VSWL1_new <- raster::stack(ERA5_VSWL1_prev, ERA5_VSWL1_act)
+
+
+  #extract values from raster brick from the considered year 
+  points_data <- ERA_VSWL1_new %>%
+    raster::extract(points, df=T)
+  
+  points_data <- cbind(points_data, points$ID)
+  points_data$ID <- NULL
+  n <- ncol(points_data)
+  names(points_data)[n] <- "ID"
+
+  #export of timeseries just for the considered year 
+  write.csv(points_data, paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export VSWL1/vswl1_hourly_",y,"_new.csv"), row.names = F)
+}
+
+test <- as.data.frame(fread("D:/LSG/Lena/IFPRI/ERA5_Land/Export VSWL1/vswl1_hourly_2020_new.csv"))
+
+
+```
+
+#4. EXTRACT DAILY MEAN FROM HOURLY SOILWATER DATA (ERA5)
+```{r}
+for(y in 2020){
+  data <- as.data.frame(fread(paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export VSWL1/vswl1_hourly_",y,"_new.csv")))
+  data$V1 <- NULL
+
+  n <- ncol(data)
+  row.names(data) <- data[,n]
+  data <- data[,-n]
+
+  data_daily <- as.data.frame(matrix(ncol=(ncol(data)/24), nrow=nrow(data)))
+  row.names(data_daily) <- row.names(data)
+
+  for(i in 1:NROW(data))
+  { for (j in 1:length(data_daily))
+    { data_daily[i,j] <- mean(unlist(data[i, c(((j*24)-23):(j*24))]), na.rm = TRUE) }
+    if (i %in% seq(from=50, to=NROW(data), by=50)) { print(i) } }
+  
+  names(data_daily) <- unique(substr(names(data),2,11))
+  data_daily$ID <- row.names(data_daily)
+  data_daily_melted <- reshape2::melt(data_daily, id.vars="ID")
+  names(data_daily_melted)[2] <- "Date"
+  
+  data_daily_melted$Date <- as.Date(data_daily_melted$Date, format="%Y.%m.%d")
+
+  #head(data_daily_melted)
+  
+  write.csv(data_daily_melted, paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export VSWL1/vswl1_daily_",y,"_new.csv"), row.names = F)
+}
+test <- read.csv("D:/LSG/Lena/IFPRI/ERA5_Land/Export VSWL1/vswl1_daily_2020_new.csv")
+
+which(is.na(test$value))
+
+which(is.na(data_daily_melted$value))
+
+```
+
+
+#5. EXTRACT HOURLY VALUES FROM ERA5-AIR TEMPERATURE FOR THE CONSIDERED YEARS + PREVIOUS YEARS
+```{r}
+#import OneAcreFund dataset
+oneaf_DATA_final <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/CropCuts_1AF_finalselection.csv")
+
+
+for(y in 2016:2020){
+ #get data for year of interest 
+  data <- filter(oneaf_DATA_final, year == y, field_latitude != 'NA', field_longitude != 'NA')
+  
+  #get coordinates and create shapefiles for several years of Survey2021
+  points <- SpatialPointsDataFrame(data=data, coords=data[,c(7,6)], 
+                                    proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs"))
+  
+  #import as raster stack
+  ERA5_ST_prev <- raster::stack(paste0("D:/LSG/Lena/IFPRI/ERA5_Land/SURFACE_TEMP_DATA/ECMWF-DAILY_ACCUMULATION_air_temperature_",y-1,".nc"),
+                                varname = "t2m") 
+  ERA5_ST_act <- raster::stack(paste0("D:/LSG/Lena/IFPRI/ERA5_Land/SURFACE_TEMP_DATA/ECMWF-DAILY_ACCUMULATION_air_temperature_",y,".nc"),
+                               varname = "t2m")
+  
+  ERA5_ST_new <- raster::stack(ERA5_ST_prev, ERA5_ST_act)
+  
+  #extract values from stack
+  points_data <- ERA5_ST_new %>%
+    raster::extract(points, df=T)
+  
+  points_data <- cbind(points_data, points$ID)
+  points_data$ID <- NULL
+  n <- ncol(points_data)
+  names(points_data)[n] <- "ID"
+  
+  #extract values from raster brick from the considered year
+  write.csv(points_data, paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export SURFACE_TEMP/surface_temp_hourly_",y,"_new.csv"),row.names = F) 
+}
+
+
+```
+
+#6. EXTRACT DAILY MEAN FROM HOURLY AIR-TEMP DATA (ERA5)
+```{r}
+for(y in 2016:2020){
+  
+  data <- as.data.frame(fread(paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export SURFACE_TEMP/surface_temp_hourly_",y,"_new.csv")))
+  data$V1 <- NULL
+
+  n <- ncol(data)
+  row.names(data) <- data[,n]
+  data <- data[,-n]
+
+
+  data <- data -273.15
+  
+  data_daily_mean <- as.data.frame(matrix(ncol=(ncol(data)/24), nrow=nrow(data)))
+  row.names(data_daily_mean) <- row.names(data)
+  
+  data_daily_max <- as.data.frame(matrix(ncol=(ncol(data)/24), nrow=nrow(data)))
+  row.names(data_daily_max) <- row.names(data)
+  
+  data_daily_min <- as.data.frame(matrix(ncol=(ncol(data)/24), nrow=nrow(data)))
+  row.names(data_daily_min) <- row.names(data)
+  
+  for(i in 1:NROW(data))
+  { for (j in 1:length(data_daily_mean))
+  { data_daily_mean[i,j] <- mean(unlist(data[i, c(((j*24)-23):(j*24))]), na.rm = TRUE)
+    data_daily_max[i,j] <- max(unlist(data[i, c(((j*24)-23):(j*24))]), na.rm = TRUE)
+    data_daily_min[i,j] <- min(unlist(data[i, c(((j*24)-23):(j*24))]), na.rm = TRUE)}
+    if (i %in% seq(from=50, to=NROW(data), by=50)) { print(i) } }
+  
+  names(data_daily_mean) <- unique(substr(names(data),2,11))
+  data_daily_mean$ID <- row.names(data_daily_mean)
+  data_daily_mean_melted <- reshape2::melt(data_daily_mean, id.vars="ID")
+  names(data_daily_mean_melted)[2] <- "Date"
+  
+  names(data_daily_max) <- unique(substr(names(data),2,11))
+  data_daily_max$ID <- row.names(data_daily_max)
+  data_daily_max_melted <- reshape2::melt(data_daily_max, id.vars="ID")
+  names(data_daily_max_melted)[2] <- "Date"
+  
+  names(data_daily_min) <- unique(substr(names(data),2,11))
+  data_daily_min$ID <- row.names(data_daily_min)
+  data_daily_min_melted <- reshape2::melt(data_daily_min, id.vars="ID")
+  names(data_daily_min_melted)[2] <- "Date"
+  
+  data_daily_mean_melted$Date <- as.Date(data_daily_mean_melted$Date, format="%Y.%m.%d")
+  data_daily_max_melted$Date <- as.Date(data_daily_max_melted$Date, format="%Y.%m.%d")
+  data_daily_min_melted$Date <- as.Date(data_daily_min_melted$Date, format="%Y.%m.%d")
+  
+  which(is.na(data_daily_min_melted$value))
+  
+  #head(data_daily_melted)
+  
+  write.csv(data_daily_mean_melted, paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export SURFACE_TEMP/surface_temp_daily_mean_",y,"_new.csv"),row.names = F) 
+  write.csv(data_daily_max_melted, paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export SURFACE_TEMP/surface_temp_daily_max_",y,"_new.csv"),row.names = F)
+  write.csv(data_daily_min_melted, paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export SURFACE_TEMP/surface_temp_daily_min_",y,"_new.csv"),row.names = F)
+}
+
+```
+
+
+#8. EXTRACT HOURLY VALUES FROM ERA5-TOTAL PRECIPITATION FOR THE CONSIDERED YEARS + PREVIOUS YEARS
+```{r}
+#import OneAcreFund dataset
+oneaf_DATA_final <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/CropCuts_1AF_finalselection.csv")
+
+
+for(y in 2016:2020){
+  #get data for year of interest 
+  data <- filter(oneaf_DATA_final, year == y, field_latitude != 'NA', field_longitude != 'NA') 
+  
+  #get coordinates and create dataframe
+  points <- SpatialPointsDataFrame(data=data, coords=data[,c(7,6)], 
+                                    proj4string = CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+
+  #import files as rasterstack 
+  ERA5_TOTPREC_prev <- raster::stack(paste0("D:/LSG/Lena/IFPRI/ERA5_Land/TOTAL_PRECIPITATION/ECMWF-DAILY_ACCUMULATION_lwe_thickness_of_precipitation_amount_",y-1,".nc"))
+  ERA5_TOTPREC_act <- raster::stack(paste0("D:/LSG/Lena/IFPRI/ERA5_Land/TOTAL_PRECIPITATION/ECMWF-DAILY_ACCUMULATION_lwe_thickness_of_precipitation_amount_",y,".nc")) 
+  
+  ERA5_TOTPREC_new <- raster::stack(ERA5_TOTPREC_prev, ERA5_TOTPREC_act)
+  
+  #extract values from raster stack from the considered year
+  points_data <- ERA5_TOTPREC_new %>%
+    raster::extract(points, df=T)
+  
+  points_data <- cbind(points_data, points$ID)
+  points_data$ID <- NULL
+  n <- ncol(points_data)
+  names(points_data)[n] <- "ID"
+  
+  #expot values from the considered year
+  write.csv(points_data, paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export TOTAL_PREC/tp_hourly_",y,"_new.csv"), row.names = F)
+}
+
+
+```
+
+#9. EXTRACT DAILY MEAN FROM HOURLY PRECIPITATION DATA (ERA5)
+```{r}
+for(y in 2016:2020){
+  #get hourly data 
+  data <- as.data.frame(fread(paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export TOTAL_PREC/tp_hourly_",y,"_new.csv")))
+  data$V1 <- NULL
+  
+  n <- ncol(data)
+  row.names(data) <- data[,n]
+  data <- data[,-n]
+  
+  data <- data * 1000
+  
+  
+  #setup new dataframe 
+  data_daily <- as.data.frame(matrix(ncol=(ncol(data)/24), nrow = nrow(data)))
+  row.names(data_daily) <- row.names(data)
+  
+  
+  #loop 
+  for(i in 1:NROW(data))
+  { for (j in 1:length(data_daily))
+  { data_daily[i,j] <- sum(unlist(data[i, c(((j*24)-23):(j*24))])) }
+    if (i %in% seq(from=50, to=NROW(data), by=50)) { print(i) } }
+  
+  names(data_daily) <- unique(substr(names(data),2,11))
+  data_daily$ID <- row.names(data_daily)
+  data_daily_melted <- reshape2::melt(data_daily, id.vars="ID")
+  names(data_daily_melted)[2] <- "Date"
+  
+  data_daily_melted$Date <- as.Date(data_daily_melted$Date, format="%Y.%m.%d")
+  
+  #export 
+  write.csv(data_daily_melted, paste0("D:/LSG/Lena/IFPRI/ERA5_Land/Export TOTAL_PREC/tp_daily_",y,"_new.csv"),row.names = F) 
+}
+
+```
+
+#9. COMPARISON MONTHLY SUM/MEAN OF ERA5 & CHIRPS PRECIPITATION for 2020
+```{r}
+#import data and select important columns
+data <- read.csv("D:/LSG/Lena/IFPRI/GrowingSeasonData/climate_data_growseas_2020.csv")
+
+data <- select(data, Date, DOY, ID, era_prec, chirps, year)
+
+#get calender and join
+calender <- readRDS("D:/LSG/Lena/IFPRI/R Code WS9/calendar_1901_2100.rds")
+calender_new <- filter(calender, year == '2020')
+
+data <- left_join(data, calender_new, by = "DOY")
+
+#aggregate for monthly sum 
+data_aggr_sum <- aggregate(cbind(era_prec, chirps) ~ ID + month_str, data = data, FUN = sum, na.rm = TRUE)
+
+#aggregate for monthly mean
+data_aggr_mean <- aggregate(cbind(era_prec, chirps) ~ ID + month_str, data = data, FUN = mean, na.rm = TRUE)
+
+#get OneAcreFund data and join with sum/mean data 
+cropcuts <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/final_data/One_Acre_Fund_Data_2021_cleaned.csv")
+cropcuts_new <- filter(cropcuts, year == '2020')
+cropcuts_new <- select(cropcuts_new, country, ID_lena)
+
+names(cropcuts_new)[2] <- "ID"
+
+data_sum <- left_join(data_aggr_sum, cropcuts_new, by = "ID")
+data_mean <- left_join(data_aggr_mean, cropcuts_new, by = "ID")
+
+
+#plot
+ggplot(data_sum, aes(x = era_prec, y = chirps, color = country)) +
+  geom_point() +
+  labs(x = "ERA5-Precipitation [mm]", y= "CHIRPS-Precipitation [mm]", title = "Total monthly precipitation") +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "right") +
+  facet_wrap(~month_str)
+
+
+ggplot(data_mean, aes(x = era_prec, y = chirps, color = country)) +
+  geom_point() +
+  labs(x = "ERA5-Precipitation [mm]", y= "CHIRPS-Precipitation [mm]", title = "Mean monthly precipitation") +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "right") +
+  facet_wrap(~month_str)
+```
+
+#10. COMPARING ESA & ERA5 SOILMOISTURE
+```{r}
+#import data and select important columns
+data <- read.csv("D:/LSG/Lena/IFPRI/GrowingSeasonData/climate_data_growseas_complete.csv")
+
+data <- select(data, Date, DOY, ID, era_vswl, esa_soilmoist)
+
+#get OneAcreFund data and join with sum/mean data 
+cropcuts <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/final_data/One_Acre_Fund_Data_2021_cleaned.csv")
+cropcuts_new <- dplyr::select(cropcuts, country, ID_lena)
+
+names(cropcuts_new)[2] <- "ID"
+
+data_new <- left_join(data, cropcuts_new, by = "ID")
+
+data_new$Date <- as.Date(data_new$Date)
+
+#aggregate for daily mean 
+data_new_aggr <- data_new %>% 
+                    group_by(country, Date) %>%
+                      summarise(era = mean(era_vswl, na.rm = TRUE),
+                      esa = mean(esa_soilmoist, na.rm = TRUE), 
+                      .groups = 'drop')
+
+data_new_aggr$year <- substr(data_new_aggr$Date, 1, 4)
+
+ggplot(data_new_aggr, aes(x = Date)) +
+  geom_line(aes(y = era, color = "ERA5"), linetype = 1, lwd = 0.5) +
+  geom_line(aes(y = esa, color = "ESA"), linetype = 1, lwd = 0.5) +
+  labs(x = "Month", y= "Soilmoisture [m3m-3]", color = "Legend") +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "right") +
+  scale_x_date(date_labels = "%b") +
+  facet_wrap(~country+year, scale = 'free_x') 
+
+```
