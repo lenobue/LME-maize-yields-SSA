@@ -1,0 +1,53 @@
+---
+title: "N-equivalents"
+author: "Lena Bueschel"
+date: "07/2022"
+output: word_document
+---
+#PREPARATION 
+library(tidyverse)
+library(variables)
+library(dplyr)
+library(lubridate)
+
+setwd("D:/LSG/Lena/IFPRI")
+
+
+```{r}
+data_new <- read.csv("D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/CropCuts_1AF_finalselection.csv")
+
+head(data_new)
+
+#1. convert NAs in compost and NPK to 0
+data_new$npk_kg_ph[is.na(data_new$npk_kg_ph)] <- 0
+data_new$comp_kg_ph[is.na(data_new$comp_kg_ph)] <- 0
+data_new$urea_kg_ph[is.na(data_new$urea_kg_ph)] <- 0
+data_new$dap_kg_ph[is.na(data_new$dap_kg_ph)] <- 0
+data_new$can_kg_ph[is.na(data_new$can_kg_ph)] <- 0
+
+#2. only take CC where compost == 0 and NPK == 0
+data_new2 <- data_new[which((data_new$npk_kg_ph==0) & (data_new$urea_kg_ph==0)),]
+
+dim(data_new2)
+
+table(select(data_new2, survey))
+
+```
+
+```{r}
+#calculte N-equivalent (27% CAN, DAP 18%, Urea 45%)
+
+data_new2$can_kg_ph <- (data_new2$can_kg_ph * (0.27))
+data_new2$dap_kg_ph <- (data_new2$dap_kg_ph * (0.18))
+data_new2$urea_kg_ph <- (data_new2$urea_kg_ph * (0.45))
+
+
+data_new2$N_kg_ph <- (data_new2$can_kg_ph + data_new2$dap_kg_ph + data_new2$urea_kg_ph)
+```
+
+```{r}
+#export 
+write.csv(data_new2, "D:/LSG/Lena/IFPRI/OneAcreFund_DATASETS/CropCuts_1AF_finalselection_Neq.csv", row.names = F)
+```
+
+
